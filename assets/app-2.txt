@@ -1,0 +1,91 @@
+adius:20px;padding-bottom:18px;max-height:94dvh}.startLogo{font-size:clamp(32px,10vw,58px);font-weight:900;text-align:center;letter-spacing:.01em}.startSub{text-align:center;font-style:italic;margin:-2px 0 14px}.rulesTiny{font:12px/1.4 Arial;color:#574a36;background:#fff4ce;padding:9px;border:1px solid #92794c;border-radius:8px}
+
+@media(min-width:800px){
+  :root{--hud:64px;--dock:92px}.hud{padding-left:18px;padding-right:18px}.dock{left:50%;right:auto;transform:translateX(-50%);width:min(720px,95vw);border:3px solid #201a14;border-bottom:0;border-radius:18px 18px 0 0}.viewport{left:50%;transform:translateX(-50%);width:min(900px,100vw)}
+}
+</style>
+</head>
+<body>
+<header class="hud">
+  <button class="iconBtn" id="menuBtn" aria-label="Pelin tiedot">☰</button>
+  <div class="hudMain"><div class="hudName" id="hudName">Lähiön Aarre</div><div class="hudMeta" id="hudMeta">Aloita peli</div></div>
+  <div class="dicePill"><span>🎲</span><span id="diceValue">–</span></div>
+</header>
+
+<main class="viewport" id="viewport">
+  <div class="world" id="world">
+    <img class="boardImg" id="boardImg" alt="Lähiön Aarre -pelilauta" draggable="false">
+    <div id="spots"></div>
+    <div id="pawns"></div>
+  </div>
+  <div class="zoomTools"><button class="zoomBtn" id="focusBtn" aria-label="Keskitä pelaajaan">◎</button><button class="zoomBtn" id="fitBtn" aria-label="Näytä koko lauta">⊙</button></div>
+  <div class="hint" id="hint"></div>
+</main>
+
+<nav class="dock">
+  <button class="actionBtn" id="rollBtn"><span class="ico">🎲</span><span>Heitä</span></button>
+  <button class="actionBtn green" id="searchBtn"><span class="ico">🔎</span><span>Tutki</span></button>
+  <button class="actionBtn" id="endBtn"><span class="ico">✓</span><span id="endLabel">Lopeta</span></button>
+  <button class="actionBtn more" id="moreBtn"><span class="ico">•••</span><span>Lisää</span></button>
+</nav>
+
+<div class="overlay startOverlay" id="startOverlay">
+  <section class="sheet">
+    <div class="startLogo">LÄHIÖN AARRE</div>
+    <div class="startSub">Stigun kätkö odottaa löytäjäänsä.</div>
+    <div class="rulesTiny">Etsi punaisia kätköjä → löydä <b>Stigun avain</b> → käy metsäkätköllä → palaa aarteen kanssa omaan kotipesääsi.</div>
+    <div class="form" style="margin-top:12px">
+      <label>Pelaajien määrä<select id="playerCount"><option value="2">2 pelaajaa</option><option value="3">3 pelaajaa</option><option value="4" selected>4 pelaajaa</option></select></label>
+      <div id="nameInputs" class="form"></div>
+      <button class="sheetBtn" id="startBtn">Aloita peli</button>
+    </div>
+  </section>
+</div>
+
+<div class="overlay hidden" id="sheetOverlay"><section class="sheet"><div class="handle"></div><div id="sheetBody"></div><div class="sheetActions" id="sheetActions"></div></section></div>
+
+<script>
+const COLORS=['#f0c326','#2f73d4','#dc3c38','#319457'];
+const HOMES=['A-talo','B-talo','C-talo','D-talo'];
+const BOARD_W=1200, BOARD_H=1696;
+
+// Coordinates match the illustrated board image. Only interactive hotspots are overlaid;
+// the actual routes remain part of the artwork.
+const N=[
+{id:'A',x:10.5,y:29.8,name:'A-talo',home:0},{id:'a1',x:18.6,y:26.9},{id:'a2',x:25.4,y:27.0},{id:'s1',x:38.3,y:23.5,stash:1},
+{id:'north',x:45.2,y:14.8,name:'Bussipysäkki Pohjoinen',bus:1},{id:'n1',x:51.0,y:11.7},{id:'s2',x:64.5,y:6.3,stash:1},{id:'n2',x:70.0,y:8.2},{id:'s3',x:73.7,y:11.0,stash:1},{id:'n3',x:74.4,y:18.5},{id:'s4',x:69.5,y:19.7,stash:1},{id:'goal',x:82.0,y:15.9,name:'Stigun metsäkätkö',goal:1},
+{id:'west',x:6.3,y:49.1,name:'Bussipysäkki Länsi',bus:1},{id:'w1',x:12.8,y:47.0},{id:'s5',x:27.5,y:46.5,stash:1},{id:'w2',x:32.0,y:49.4},{id:'s6',x:46.2,y:51.4,stash:1},{id:'ostari',x:49.8,y:54.8,name:'OSTARI'},{id:'s7',x:62.8,y:51.4,stash:1},{id:'grilli',x:67.8,y:55.0,name:'Grillikioski'},{id:'s8',x:75.6,y:47.4,stash:1},{id:'east',x:93.1,y:49.4,name:'Bussipysäkki Itä',bus:1},
+{id:'police',x:23.7,y:61.8,name:'Poliisilaitos'},{id:'p1',x:31.5,y:61.5},{id:'s9',x:45.4,y:63.1,stash:1},{id:'bar',x:50.0,y:70.2,name:'Lähiöbaari'},{id:'s10',x:56.0,y:63.6,stash:1},{id:'gas',x:74.0,y:64.8,name:'Huoltoasema'},{id:'s11',x:84.8,y:61.5,stash:1},
+{id:'B',x:10.4,y:86.6,name:'B-talo',home:1},{id:'skate',x:24.3,y:77.6,name:'Skeittiparkki'},{id:'s12',x:33.3,y:72.2,stash:1},{id:'b2',x:42.0,y:79.6},{id:'south',x:50.2,y:86.2,name:'Bussipysäkki Etelä',bus:1},{id:'s13',x:66.8,y:72.2,stash:1},{id:'cellar',x:75.4,y:79.1,name:'Kerrostalon kellari'},{id:'C',x:89.2,y:86.5,name:'C-talo',home:2},{id:'D',x:92.0,y:70.9,name:'D-talo',home:3}
+];
+const M=Object.fromEntries(N.map(n=>[n.id,n]));
+const E=[
+['A','a1'],['a1','a2'],['a2','s1'],['s1','north'],['north','n1'],['n1','s2'],['s2','n2'],['n2','s3'],['s3','n3'],['n3','s4'],['s4','goal'],
+['s1','s5'],['s5','w2'],['w2','s6'],['s6','ostari'],['north','s6'],['west','w1'],['w1','s5'],['west','police'],['police','p1'],['p1','s9'],['s9','ostari'],
+['ostari','s7'],['s7','grilli'],['grilli','s8'],['s8','east'],['s7','s4'],['s8','n3'],['east','s11'],['s11','D'],['east','D'],['gas','s11'],['grilli','gas'],
+['ostari','s10'],['s10','gas'],['s10','bar'],['s9','bar'],['police','B'],['B','skate'],['skate','s12'],['s12','b2'],['b2','south'],['bar','south'],
+['south','s13'],['s13','cellar'],['cellar','C'],['cellar','D'],['gas','cellar'],['s13','C']
+];
+const ADJ={};N.forEach(n=>ADJ[n.id]=[]);E.forEach(([a,b])=>{ADJ[a].push(b);ADJ[b].push(a)});
+const STASHES=N.filter(n=>n.stash).map(n=>n.id), BUS=['north','east','south','west'];
+const DECK=[
+{type:'key',name:'Stigun avain',emoji:'🗝️',desc:'Nyt tiedät, miten metsäkätkö avataan.'},
+{type:'peukku',name:'Peukku',emoji:'👍',value:500,desc:'Arvo Ostarilla 500 €.'},{type:'peukku',name:'Peukku',emoji:'👍',value:500,desc:'Arvo Ostarilla 500 €.'},
+{type:'budi',name:'Budi',emoji:'🌿',value:200,desc:'Arvo Ostarilla 200 €.'},{type:'budi',name:'Budi',emoji:'🌿',value:200,desc:'Arvo Ostarilla 200 €.'},
+{type:'cash',name:'Käteisnyytti',emoji:'💶',value:300,desc:'Arvo Ostarilla 300 €.'},{type:'cash',name:'Käteisnyytti',emoji:'💶',value:300,desc:'Arvo Ostarilla 300 €.'},
+{type:'phone',name:'Pöllitty luuri',emoji:'📱',value:150,desc:'Arvo Ostarilla 150 €.'},{type:'jopo',name:'Jopo',emoji:'🚲',desc:'Saat +1 kaikkiin liikkumisheittoihin.'},
+{type:'bottles',name:'Panttikassi',emoji:'♻️',value:50,desc:'Arvo Ostarilla 50 €.'},{type:'police',name:'Partio',emoji:'🚔',desc:'Poliisilaitokselle ja seuraava vuoro väliin.'},
+{type:'empty',name:'Tyhjä jemma',emoji:'🕳️',desc:'Ei mitään. Joku taisi ehtiä ensin.'},{type:'empty',name:'Tyhjä jemma',emoji:'🕳️',desc:'Ei mitään. Joku taisi ehtiä ensin.'}
+];
+const $=id=>document.getElementById(id); let S=null;
+async function loadBoard(){
+  try{
+    const names=Array.from({length:11},(_,i)=>`./assets/board-${i+1}.txt`);
+    const parts=await Promise.all(names.map(n=>fetch(n).then(r=>{if(!r.ok)throw new Error(n);return r.text()})));
+    $('boardImg').src='data:image/webp;base64,'+parts.join('');
+  }catch(e){
+    showHint('Karttakuvan lataus epäonnistui · päivitä sivu');
+  }
+}
+loadBoard();
+fun
