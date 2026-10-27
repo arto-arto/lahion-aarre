@@ -1,0 +1,14 @@
+{
+  "name": "Lähiön Aarre",
+  "short_name": "Lähiön Aarre",
+  "description": "Mobiilille optimoitu digitaalinen hot-seat-lautapeli.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#211d18",
+  "theme_color": "#211d18",
+  "orientation": "portrait",
+  "icons": [
+    {"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}
