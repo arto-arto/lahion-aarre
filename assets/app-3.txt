@@ -1,0 +1,69 @@
+ction shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function pos(n){return {x:n.x/100*BOARD_W,y:n.y/100*BOARD_H}}
+function current(){return S.players[S.turn]}
+function nodeLabel(id){return M[id].name||(M[id].stash?'Kätkö':'Reitillä')}
+function log(t){S.log.push(t);if(S.log.length>60)S.log.shift()}
+
+/* Map transform / pan / pinch zoom */
+const viewport=$('viewport'), world=$('world');
+let view={scale:.4,x:0,y:0}, pointers=new Map(), dragStart=null, pinchStart=null, moved=false;
+function fitBoard(){
+ const r=viewport.getBoundingClientRect();
+ const scale=Math.min(r.width/BOARD_W,r.height/BOARD_H)*.965;
+ view.scale=scale;view.x=(r.width-BOARD_W*scale)/2;view.y=(r.height-BOARD_H*scale)/2;applyView();
+}
+function clampView(){
+ const r=viewport.getBoundingClientRect(),w=BOARD_W*view.scale,h=BOARD_H*view.scale,margin=70;
+ if(w<=r.width){view.x=(r.width-w)/2}else view.x=Math.min(margin,Math.max(r.width-w-margin,view.x));
+ if(h<=r.height){view.y=(r.height-h)/2}else view.y=Math.min(margin,Math.max(r.height-h-margin,view.y));
+}
+function applyView(){clampView();world.style.transform=`translate3d(${view.x}px,${view.y}px,0) scale(${view.scale})`}
+function centerOn(id,boost=false){
+ const n=M[id],p=pos(n),r=viewport.getBoundingClientRect();
+ if(boost)view.scale=Math.max(view.scale,Math.min(r.width/BOARD_W,r.height/BOARD_H)*1.55);
+ view.x=r.width/2-p.x*view.scale;view.y=r.height/2-p.y*view.scale;applyView();
+}
+function zoomAt(factor,cx,cy){
+ const old=view.scale, next=Math.max(.22,Math.min(1.25,old*factor));if(next===old)return;
+ const wx=(cx-view.x)/old,wy=(cy-view.y)/old;view.scale=next;view.x=cx-wx*next;view.y=cy-wy*next;applyView();
+}
+viewport.addEventListener('pointerdown',e=>{
+ if(e.target.classList.contains('spot')&&e.target.classList.contains('legal'))return;
+ viewport.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=false;
+ if(pointers.size===1)dragStart={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};
+ if(pointers.size===2){const a=[...pointers.values()];pinchStart={d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),scale:view.scale,cx:(a[0].x+a[1].x)/2,cy:(a[0].y+a[1].y)/2,x:view.x,y:view.y}}
+});
+viewport.addEventListener('pointermove',e=>{
+ if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ if(pointers.size===1&&dragStart){const dx=e.clientX-dragStart.x,dy=e.clientY-dragStart.y;if(Math.abs(dx)+Math.abs(dy)>5)moved=true;view.x=dragStart.vx+dx;view.y=dragStart.vy+dy;applyView()}
+ else if(pointers.size===2&&pinchStart){moved=true;const a=[...pointers.values()],d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),cx=(a[0].x+a[1].x)/2,cy=(a[0].y+a[1].y)/2;const next=Math.max(.22,Math.min(1.25,pinchStart.scale*d/pinchStart.d));const wx=(pinchStart.cx-pinchStart.x)/pinchStart.scale,wy=(pinchStart.cy-pinchStart.y)/pinchStart.scale;view.scale=next;view.x=cx-wx*next;view.y=cy-wy*next;applyView()}
+});
+function pointerEnd(e){pointers.delete(e.pointerId);if(pointers.size<2)pinchStart=null;if(pointers.size===0)dragStart=null}
+viewport.addEventListener('pointerup',pointerEnd);viewport.addEventListener('pointercancel',pointerEnd);
+viewport.addEventListener('wheel',e=>{e.preventDefault();const r=viewport.getBoundingClientRect();zoomAt(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+$('fitBtn').onclick=fitBoard;$('focusBtn').onclick=()=>S?centerOn(current().pos,true):fitBoard();
+window.addEventListener('resize',()=>setTimeout(fitBoard,80));
+
+function makeSpots(){
+ const root=$('spots');root.innerHTML='';N.forEach(n=>{const d=document.createElement('button');d.className='spot';d.dataset.id=n.id;const p=pos(n);d.style.left=p.x+'px';d.style.top=p.y+'px';d.setAttribute('aria-label',nodeLabel(n.id));d.onclick=e=>{e.stopPropagation();moveTo(n.id)};root.appendChild(d)})
+}
+makeSpots();
+
+function setupNames(){const c=+$('playerCount').value;$('nameInputs').innerHTML='';for(let i=0;i<c;i++){const input=document.createElement('input');input.id='nm'+i;input.value=['Pekke','Make','Sanna','Jore'][i]||`Pelaaja ${i+1}`;input.placeholder=`Pelaaja ${i+1}`;$('nameInputs').appendChild(input)}}
+$('playerCount').onchange=setupNames;setupNames();
+
+function startGame(){
+ const c=+$('playerCount').value;let deck=shuffle(DECK);while(deck.length<STASHES.length)deck.push({type:'empty',name:'Tyhjä jemma',emoji:'🕳️',desc:'Ei mitään.'});deck=shuffle(deck).slice(0,STASHES.length);if(!deck.some(x=>x.type==='key'))deck[0]=DECK[0];
+ const st={};STASHES.forEach((id,i)=>st[id]={...deck[i],opened:false});
+ S={turn:0,phase:'roll',moves:0,roll:0,treasureTaken:false,over:false,stashes:st,log:['Peli alkaa. Stigun avain on piilotettu yhteen kätköistä.'],players:Array.from({length:c},(_,i)=>({name:$('nm'+i).value||`Pelaaja ${i+1}`,color:COLORS[i],home:['A','B','C','D'][i],homeName:HOMES[i],pos:['A','B','C','D'][i],money:300,items:[],key:false,jopo:false,treasure:false,skip:0}))};
+ $('startOverlay').classList.add('hidden');fitBoard();beginTurn();render();setTimeout(()=>centerOn(current().pos,false),180);
+}
+function beginTurn(){if(S.over)return;const p=current();if(p.skip>0){p.skip--;log(`${p.name} selvittelee asioita poliisilaitoksella ja menettää vuoronsa.`);S.turn=(S.turn+1)%S.players.length;setTimeout(beginTurn,250);return}S.phase='roll';S.moves=0;S.roll=0;log(`— ${p.name} —`);render();setTimeout(()=>centerOn(p.pos,false),100)}
+function nextTurn(){if(S.over)return;S.turn=(S.turn+1)%S.players.length;beginTurn()}
+function rollDice(){if(S.phase!=='roll')return;let r=1+Math.floor(Math.random()*6);if(current().jopo)r++;S.roll=r;S.moves=r;S.phase='move';log(`${current().name} heitti ${r}${current().jopo?' Jopolla':''}.`);showHint(`${r} askelta · valitse hohtava ruutu`);render()}
+function moveTo(id){if(!S||S.phase!=='move'||S.moves<1)return;const p=current();if(!ADJ[p.pos].includes(id))return;p.pos=id;S.moves--;log(`${p.name} → ${nodeLabel(id)}`);handleLanding();if(S.phase==='move'&&S.moves===0)S.phase='action';render();setTimeout(()=>centerOn(p.pos,false),80)}
+function stopOrEnd(){if(S.phase==='move'){S.moves=0;S.phase='action';handleLanding();render();return}if(S.phase==='action')nextTurn()}
+function handleLanding(){
+ const p=current();if(p.treasure&&p.pos===p.home){S.over=true;render();openSheet(`<div class="findCard"><div class="findEmoji">🏆</div><div class="findName">${p.name} voitti!</div><div class="findDesc">Stigun aarre pääsi ${p.homeName}-kotipesään.</div></div>`,[],false);log(`${p.name} voitti pelin!`);return}
+ if(p.pos==='goal'&&p.key&&!S.treasureTaken){p.key=false;p.treasure=true;S.treasureTaken=true;S.phase='action';log(`${p.name} avasi Stigun metsäkätkön!`);openFind('🌲💰','STIGUN METSÄKÄTKÖ',`Aarre on sinun. Nyt takaisin ${p.homeName}-kotipesään!`);return}
+ const owner=S.players.findIndex((q,i)=>i!==S.turn&&q.pos===p.pos&&q.treasure);if(owner>=0)duel(owner,S.turn);else if(p.treasure){const ch=S.players.findIndex((q,i)=>i!==S.turn&&q.pos===p.pos);if(ch>=0)duel(S.turn,
